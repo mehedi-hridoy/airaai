@@ -6,6 +6,7 @@ import express from "express";
 import cors from "cors";
 import { chatRouter } from "./routes/chat.js";
 import { companiesRouter } from "./routes/companies.js";
+import ttsRouter from "./routes/tts.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -29,6 +30,7 @@ app.get("/health", (_, res) => {
 // Routes
 app.use("/api/chat", chatRouter);
 app.use("/api/companies", companiesRouter);
+app.use("/api/tts", ttsRouter);
 
 // Error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
