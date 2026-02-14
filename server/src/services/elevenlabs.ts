@@ -2,6 +2,21 @@
 // High-quality, natural-sounding voices using Gemini's native TTS
 
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta";
+const isProduction = process.env.NODE_ENV === "production";
+
+// Gemini TTS API response type
+interface GeminiTTSResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        inlineData?: {
+          data?: string;
+          mimeType?: string;
+        };
+      }>;
+    };
+  }>;
+}
 
 // Gemini TTS voices
 export const VOICES = {
@@ -40,7 +55,9 @@ export async function textToSpeech(
 
   const opts = { ...DEFAULT_OPTIONS, ...options };
   
-  console.log(`🎙️ Gemini TTS: "${text.substring(0, 50)}..." with voice ${opts.voiceId}`);
+  if (!isProduction) {
+    console.log(`🎙️ Gemini TTS: "${text.substring(0, 50)}..." with voice ${opts.voiceId}`);
+  }
 
   const response = await fetch(
     `${GEMINI_API_URL}/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`,
@@ -73,7 +90,7 @@ export async function textToSpeech(
     throw new Error(`Gemini TTS API error: ${response.status} - ${errorText}`);
   }
 
-  const data = await response.json();
+  const data = (await response.json()) as GeminiTTSResponse;
   
   // Extract audio from response
   const audioData = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;

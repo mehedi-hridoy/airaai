@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI, Content } from "@google/generative-ai";
 
+const isProduction = process.env.NODE_ENV === "production";
+
 // Lazy initialization to ensure env vars are loaded first
 let genAI: GoogleGenerativeAI | null = null;
 
@@ -9,7 +11,9 @@ function getGenAI(): GoogleGenerativeAI {
     if (!apiKey) {
       throw new Error("GEMINI_API_KEY environment variable is not set");
     }
-    console.log("🔑 Initializing Gemini with API key:", apiKey.substring(0, 10) + "...");
+    if (!isProduction) {
+      console.log("🔑 Initializing Gemini with API key:", apiKey.substring(0, 10) + "...");
+    }
     genAI = new GoogleGenerativeAI(apiKey);
   }
   return genAI;
