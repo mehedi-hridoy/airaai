@@ -21,19 +21,36 @@ if (missingEnvVars.length > 0) {
 }
 
 // Middleware
-const allowedOrigins = [
-  process.env.CORS_ORIGIN || "http://localhost:3000",
-];
+const configuredOrigins = (process.env.CORS_ORIGIN || "http://localhost:3000")
+  .split(",")
+  .map((o) => o.trim().replace(/\/$/, ""))
+  .filter(Boolean);
+
+const allowedOrigins = [...configuredOrigins];
 
 // In development, allow additional origins
 if (!isProduction) {
   allowedOrigins.push("http://localhost:3003", "http://localhost:3001");
 }
 
-app.use(cors({
-  origin: allowedOrigins,
-  credentials: true,
-}));
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow non-browser requests (curl, server-to-server) and same-origin calls.
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      const normalizedOrigin = origin.replace(/\/$/, "");
+      const isKnownOrigin = allowedOrigins.includes(normalizedOrigin);
+      const isVercelFrontend = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i.test(normalizedOrigin);
+
+      callback(null, isKnownOrigin || isVercelFrontend);
+    },
+    credentials: true,
+  })
+);
 app.use(express.json({ limit: "10mb" }));
 
 // Security headers for production
@@ -47,6 +64,19 @@ if (isProduction) {
 }
 
 // Health check
+app.get("/", (_req, res) => {
+  res.json({
+    service: "Aira API",
+    status: "ok",
+    docs: {
+      health: "/health",
+      chat: "/api/chat",
+      stt: "/api/stt",
+      tts: "/api/tts",
+    },
+  });
+});
+
 app.get("/health", (_, res) => {
   res.json({ 
     status: "ok", 
