@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { textToSpeech, getVoices, VOICES, VoiceId } from "../services/elevenlabs";
+import { textToSpeech, getVoices, VOICES, VoiceId } from "../services/elevenlabs.js";
 
 const router = Router();
 

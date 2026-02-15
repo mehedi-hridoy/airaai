@@ -10,7 +10,6 @@ import ttsRouter from "./routes/tts.js";
 import sttRouter from "./routes/stt.js";
 
 const app = express();
-const PORT = process.env.PORT || 3001;
 const NODE_ENV = process.env.NODE_ENV || "development";
 const isProduction = NODE_ENV === "production";
 
@@ -18,8 +17,7 @@ const isProduction = NODE_ENV === "production";
 const requiredEnvVars = ["GROQ_API_KEY"];
 const missingEnvVars = requiredEnvVars.filter((v) => !process.env[v]);
 if (missingEnvVars.length > 0) {
-  console.error(`❌ Missing required environment variables: ${missingEnvVars.join(", ")}`);
-  process.exit(1);
+  console.error(`⚠️ Missing required environment variables: ${missingEnvVars.join(", ")}`);
 }
 
 // Middleware
@@ -54,6 +52,7 @@ app.get("/health", (_, res) => {
     status: "ok", 
     timestamp: new Date().toISOString(),
     environment: NODE_ENV,
+    missingEnvVars,
   });
 });
 
@@ -76,15 +75,4 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
   });
 });
 
-// Graceful shutdown
-const server = app.listen(PORT, () => {
-  console.log(`🚀 Aira AI Server running on http://localhost:${PORT} (${NODE_ENV})`);
-});
-
-process.on("SIGTERM", () => {
-  console.log("SIGTERM received, shutting down gracefully...");
-  server.close(() => {
-    console.log("Server closed");
-    process.exit(0);
-  });
-});
+export default app;
