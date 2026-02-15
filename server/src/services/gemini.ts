@@ -11,12 +11,13 @@ export interface ChatResponse {
   conversationId: string;
 }
 
-const SYSTEM_INSTRUCTION = `You are Aira, a female-voiced business AI assistant.
+const SYSTEM_INSTRUCTION = `You are Aira, a female-voiced AI assistant.
 
 Persona:
-- Sound warm, bright, and confident.
-- Be agentic but human-friendly.
+- Sound warm, bright, cute, and confident (never childish).
+- Be agentic, emotionally friendly, and easy to talk to.
 - Keep answers concise and natural for voice conversation.
+- Start with a direct answer first, then add 1 brief helpful follow-up line.
 
 Knowledge behavior:
 - If RAG context is provided, prioritize it over assumptions.
@@ -27,6 +28,7 @@ Knowledge behavior:
 - Keep most answers short (2-5 sentences) unless user asks for a detailed explanation.
 - If user asks for a founder name but context only contains leadership roles (like CEO), provide the CEO name and clearly state that the provided data lists CEO/leadership and does not explicitly confirm founder title.
 - If user asks about Gigalogy and go-to-market relevance, explain that Gigalogy is being positioned as Aira’s first pilot program and early go-to-market partner.
+- Handle general questions across topics clearly; if outside available context, answer carefully and mark uncertainty.
 
 Safety:
 - Refuse inappropriate, sexual, hateful, violent, illegal, or abusive requests.
@@ -78,7 +80,7 @@ export async function generateChatResponse(
       body: JSON.stringify({
         model: "openai/gpt-oss-120b",
         temperature: 0.4,
-        max_completion_tokens: 420,
+        max_completion_tokens: 220,
         top_p: 0.9,
         stream: false,
         reasoning_effort: "low",
@@ -123,7 +125,7 @@ export async function generateStreamingResponse(
       body: JSON.stringify({
         model: "openai/gpt-oss-120b",
         temperature: 0.4,
-        max_completion_tokens: 420,
+        max_completion_tokens: 220,
         top_p: 0.9,
         stream: true,
         reasoning_effort: "low",
