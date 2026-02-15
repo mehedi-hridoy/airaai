@@ -1,3 +1,4 @@
+import fsSync from "fs";
 import fs from "fs/promises";
 import path from "path";
 
@@ -24,7 +25,14 @@ interface KnowledgeChunk {
 const companyStore = new Map<string, CompanyData>();
 const knowledgeChunks: KnowledgeChunk[] = [];
 
-const ROOT_DATA_DIR = path.join(process.cwd(), "..", "data");
+const DATA_DIR_CANDIDATES = [
+  process.env.DATA_DIR,
+  path.join(process.cwd(), "data"),
+  path.join(process.cwd(), "..", "data"),
+].filter(Boolean) as string[];
+
+const ROOT_DATA_DIR =
+  DATA_DIR_CANDIDATES.find((candidate) => fsSync.existsSync(candidate)) || DATA_DIR_CANDIDATES[0];
 const COMPANY_DATA_DIR = path.join(ROOT_DATA_DIR, "companies");
 
 const STOP_WORDS = new Set([
