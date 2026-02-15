@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import { generateChatResponse, generateStreamingResponse, ChatMessage } from "../services/gemini.js";
 import { searchContext } from "../services/rag.js";
 import { getSafetyRefusalMessage, isInappropriateQuery } from "../services/safety.js";
+import { getWebSearchContext } from "../services/web-search.js";
 
 export const chatRouter = Router();
 
@@ -42,6 +43,7 @@ function isGigalogyFounderQuestion(message: string): boolean {
  */
 chatRouter.post("/", async (req: Request, res: Response) => {
   let context = "";
+  let webContext = "";
   
   try {
     const { message, conversationId, companyId, stream } = req.body as ChatRequest;
@@ -83,6 +85,11 @@ chatRouter.post("/", async (req: Request, res: Response) => {
 
     // Get relevant context from RAG system
     context = searchContext(message, companyId);
+    if (!context) {
+      webContext = await getWebSearchContext(message);
+    }
+
+    const finalContext = [context, webContext].filter(Boolean).join("\n\n---\n\n");
 
     if (stream) {
       // Streaming response
@@ -90,14 +97,30 @@ chatRouter.post("/", async (req: Request, res: Response) => {
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
 
-      const fullResponse = await generateStreamingResponse(
-        message,
-        context,
-        history,
-        (chunk) => {
-          res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+      let fullResponse = "";
+      try {
+        fullResponse = await generateStreamingResponse(
+          message,
+          finalContext,
+          history,
+          (chunk) => {
+            res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+          }
+        );
+      } catch (streamError) {
+        if (!webContext) {
+          throw streamError;
         }
-      );
+
+        fullResponse = await generateStreamingResponse(
+          message,
+          context,
+          history,
+          (chunk) => {
+            res.write(`data: ${JSON.stringify({ chunk })}\n\n`);
+          }
+        );
+      }
 
       // Update conversation history
       history.push({ role: "user", content: message });
@@ -108,7 +131,16 @@ chatRouter.post("/", async (req: Request, res: Response) => {
       res.end();
     } else {
       // Regular response
-      const response = normalizeAssistantText(await generateChatResponse(message, context, history));
+      let response = "";
+      try {
+        response = normalizeAssistantText(await generateChatResponse(message, finalContext, history));
+      } catch (chatError) {
+        if (!webContext) {
+          throw chatError;
+        }
+
+        response = normalizeAssistantText(await generateChatResponse(message, context, history));
+      }
 
       // Update conversation history
       history.push({ role: "user", content: message });

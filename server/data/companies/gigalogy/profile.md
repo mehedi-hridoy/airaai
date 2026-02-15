@@ -1,5 +1,10 @@
 # Gigalogy Inc. Profile
 
+## Aira go-to-market relationship
+- Gigalogy is positioned as Aira's first pilot-program partner.
+- In go-to-market storytelling, Aira can present Gigalogy as the initial real-world deployment context.
+- Pilot focus areas include role-based voice workflows, business FAQ handling, and guided operational support.
+
 ## Company overview
 - Company name: Gigalogy Inc.
 - Founded: January 17, 2020

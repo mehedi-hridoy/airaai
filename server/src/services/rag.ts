@@ -358,6 +358,7 @@ export function searchContext(query: string, companyId?: string): string {
   const normalizedQuery = query.toLowerCase();
   const correctedTokens = getCorrectedDomainTokens(query);
   const expandedQuery = `${normalizedQuery} ${correctedTokens.join(" ")}`.trim();
+  const isGigalogyQuery = expandedQuery.includes("gigalogy");
   const queryKeywords = new Set(tokenize(query));
   correctedTokens.forEach((token) => queryKeywords.add(token));
   DOMAIN_KEYWORDS.forEach((kw) => {
@@ -409,6 +410,7 @@ export function searchContext(query: string, companyId?: string): string {
       // Prefer direct mentions of Aira/Gigalogy/team/technopreneurship.
       if (expandedQuery.includes("aira") && chunk.keywords.has("aira")) score += 3;
       if (expandedQuery.includes("gigalogy") && chunk.keywords.has("gigalogy")) score += 3;
+      if (isGigalogyQuery && chunk.source.includes("companies/gigalogy")) score += 8;
       if (expandedQuery.includes("team") && chunk.keywords.has("team")) score += 2;
       if (expandedQuery.includes("technopreneurship") && chunk.keywords.has("technopreneurship")) score += 3;
       if (expandedQuery.includes("founder") && (chunk.keywords.has("ceo") || chunk.keywords.has("leadership"))) score += 3;
@@ -418,7 +420,7 @@ export function searchContext(query: string, companyId?: string): string {
     })
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 4);
+    .slice(0, 6);
 
   if (scored.length > 0) {
     for (const { chunk } of scored) {
