@@ -2,6 +2,7 @@
 // High-quality, natural-sounding voices using Gemini's native TTS
 
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta";
+const ELEVENLABS_API_URL = "https://api.elevenlabs.io/v1/text-to-speech";
 const isProduction = process.env.NODE_ENV === "production";
 
 // Gemini TTS API response type
@@ -39,28 +40,78 @@ export interface TTSOptions {
   voiceId?: VoiceId;
 }
 
+export interface TTSResult {
+  audioBuffer: Buffer;
+  mimeType: "audio/wav" | "audio/mpeg";
+  provider: "gemini" | "elevenlabs";
+}
+
 const DEFAULT_OPTIONS: Required<TTSOptions> = {
-  voiceId: VOICES.AOEDE, // Great for AI assistant - warm female voice
+  voiceId: VOICES.AOEDE, // Warmer and more natural female voice
 };
 
 export async function textToSpeech(
   text: string,
   options: TTSOptions = {}
-): Promise<Buffer> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  
-  if (!apiKey) {
-    throw new Error("GEMINI_API_KEY environment variable is not set");
+): Promise<TTSResult> {
+  const geminiApiKey = process.env.GEMINI_API_KEY;
+  const elevenLabsApiKey = process.env.ELEVENLABS_API_KEY;
+
+  if (!geminiApiKey && !elevenLabsApiKey) {
+    throw new Error("Either ELEVENLABS_API_KEY or GEMINI_API_KEY environment variable must be set");
   }
 
   const opts = { ...DEFAULT_OPTIONS, ...options };
+  const cleanedText = sanitizeSpeechText(text);
+
+  if (elevenLabsApiKey) {
+    try {
+      const elevenLabsVoiceId = process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM"; // Rachel
+      const elevenLabsResponse = await fetch(`${ELEVENLABS_API_URL}/${elevenLabsVoiceId}`, {
+        method: "POST",
+        headers: {
+          "xi-api-key": elevenLabsApiKey,
+          "Content-Type": "application/json",
+          Accept: "audio/mpeg",
+        },
+        body: JSON.stringify({
+          text: cleanedText,
+          model_id: "eleven_turbo_v2_5",
+          voice_settings: {
+            stability: 0.42,
+            similarity_boost: 0.8,
+            style: 0.28,
+            use_speaker_boost: true,
+          },
+        }),
+      });
+
+      if (elevenLabsResponse.ok) {
+        const arrayBuffer = await elevenLabsResponse.arrayBuffer();
+        return {
+          audioBuffer: Buffer.from(arrayBuffer),
+          mimeType: "audio/mpeg",
+          provider: "elevenlabs",
+        };
+      }
+
+      const elevenErr = await elevenLabsResponse.text();
+      console.error("ElevenLabs TTS API error:", elevenLabsResponse.status, elevenErr);
+    } catch (error) {
+      console.error("ElevenLabs TTS request failed, falling back to Gemini:", error);
+    }
+  }
+
+  if (!geminiApiKey) {
+    throw new Error("ELEVENLABS TTS failed and GEMINI_API_KEY is not set for fallback");
+  }
   
   if (!isProduction) {
-    console.log(`🎙️ Gemini TTS: "${text.substring(0, 50)}..." with voice ${opts.voiceId}`);
+    console.log(`🎙️ Gemini TTS fallback: "${cleanedText.substring(0, 50)}..." with voice ${opts.voiceId}`);
   }
 
   const response = await fetch(
-    `${GEMINI_API_URL}/models/gemini-2.5-flash-preview-tts:generateContent?key=${apiKey}`,
+    `${GEMINI_API_URL}/models/gemini-2.5-flash-preview-tts:generateContent?key=${geminiApiKey}`,
     {
       method: "POST",
       headers: {
@@ -68,7 +119,11 @@ export async function textToSpeech(
       },
       body: JSON.stringify({
         contents: [{ 
-          parts: [{ text: `Say exactly this text out loud: "${text}"` }] 
+          parts: [
+            {
+              text: `Speak naturally like a warm, confident, human assistant. Use conversational pacing, natural pauses, and soft emotional variation. Avoid robotic rhythm. Text: ${cleanedText}`,
+            },
+          ] 
         }],
         generationConfig: {
           responseModalities: ["AUDIO"],
@@ -105,7 +160,24 @@ export async function textToSpeech(
   // Convert PCM to WAV format for browser playback
   const wavBuffer = pcmToWav(pcmBuffer, 24000, 1); // 24kHz mono
   
-  return wavBuffer;
+  return {
+    audioBuffer: wavBuffer,
+    mimeType: "audio/wav",
+    provider: "gemini",
+  };
+}
+
+function sanitizeSpeechText(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+    .replace(/^\s*[-*]\s+/gm, "")
+    .replace(/^\s*#{1,6}\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // Convert raw PCM to WAV format

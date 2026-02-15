@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { generateChatResponse, generateStreamingResponse, ChatMessage } from "../services/gemini.js";
 import { searchContext } from "../services/rag.js";
+import { getSafetyRefusalMessage, isInappropriateQuery } from "../services/safety.js";
 
 export const chatRouter = Router();
 
@@ -13,6 +14,26 @@ interface ChatRequest {
   conversationId?: string;
   companyId?: string;
   stream?: boolean;
+}
+
+function normalizeAssistantText(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1")
+    .replace(/^\s*[-*]\s+/gm, "")
+    .replace(/^\s*#{1,6}\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isGigalogyFounderQuestion(message: string): boolean {
+  const q = message.toLowerCase();
+  const asksFounder = /\bfounder\b|\bco[ -]?founder\b/.test(q);
+  const mentionsGigalogy = /\bgiga\w*\b/.test(q);
+  return asksFounder && mentionsGigalogy;
 }
 
 /**
@@ -32,6 +53,33 @@ chatRouter.post("/", async (req: Request, res: Response) => {
     // Get or create conversation
     const convId = conversationId || uuidv4();
     const history = conversations.get(convId) || [];
+
+    if (isGigalogyFounderQuestion(message)) {
+      const fixedFounderResponse =
+        "For Gigalogy, your current data clearly lists Mosleh Uddin as CEO and key leadership. In investor demos, you can present him as the primary leader of Gigalogy. If you want, I can also give you a clean 20-second founder and company intro script.";
+
+      history.push({ role: "user", content: message });
+      history.push({ role: "assistant", content: fixedFounderResponse });
+      conversations.set(convId, history);
+
+      return res.json({
+        message: fixedFounderResponse,
+        conversationId: convId,
+      });
+    }
+
+    // Safety filter for inappropriate requests
+    if (isInappropriateQuery(message)) {
+      const refusal = getSafetyRefusalMessage();
+      history.push({ role: "user", content: message });
+      history.push({ role: "assistant", content: refusal });
+      conversations.set(convId, history);
+
+      return res.json({
+        message: refusal,
+        conversationId: convId,
+      });
+    }
 
     // Get relevant context from RAG system
     context = searchContext(message, companyId);
@@ -60,7 +108,7 @@ chatRouter.post("/", async (req: Request, res: Response) => {
       res.end();
     } else {
       // Regular response
-      const response = await generateChatResponse(message, context, history);
+      const response = normalizeAssistantText(await generateChatResponse(message, context, history));
 
       // Update conversation history
       history.push({ role: "user", content: message });

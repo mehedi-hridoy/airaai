@@ -19,16 +19,16 @@ router.post("/", async (req: Request, res: Response): Promise<void> => {
       ? voiceId 
       : VOICES.AOEDE; // Default to Aoede - warm female voice
 
-    const audioBuffer = await textToSpeech(text, { voiceId: selectedVoice });
+    const tts = await textToSpeech(text, { voiceId: selectedVoice });
 
-    // Set appropriate headers for audio (WAV format)
+    // Set appropriate headers for audio format from provider
     res.set({
-      "Content-Type": "audio/wav",
-      "Content-Length": audioBuffer.length.toString(),
+      "Content-Type": tts.mimeType,
+      "Content-Length": tts.audioBuffer.length.toString(),
       "Cache-Control": "no-cache",
     });
 
-    res.send(audioBuffer);
+    res.send(tts.audioBuffer);
   } catch (error) {
     console.error("TTS error:", error);
     res.status(500).json({ 

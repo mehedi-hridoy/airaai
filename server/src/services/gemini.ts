@@ -1,23 +1,5 @@
-import { GoogleGenerativeAI, Content } from "@google/generative-ai";
-
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 const isProduction = process.env.NODE_ENV === "production";
-
-// Lazy initialization to ensure env vars are loaded first
-let genAI: GoogleGenerativeAI | null = null;
-
-function getGenAI(): GoogleGenerativeAI {
-  if (!genAI) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY environment variable is not set");
-    }
-    if (!isProduction) {
-      console.log("🔑 Initializing Gemini with API key:", apiKey.substring(0, 10) + "...");
-    }
-    genAI = new GoogleGenerativeAI(apiKey);
-  }
-  return genAI;
-}
 
 export interface ChatMessage {
   role: "user" | "assistant";
@@ -29,63 +11,96 @@ export interface ChatResponse {
   conversationId: string;
 }
 
-const SYSTEM_INSTRUCTION = `You are Aira, an intelligent AI voice assistant powered by Aira AI - the world's first infrastructure-level voice AI platform.
+const SYSTEM_INSTRUCTION = `You are Aira, a female-voiced business AI assistant.
 
-Your capabilities:
-1. You have comprehensive knowledge about specific companies through a RAG system
-2. You speak naturally and conversationally, like a helpful team member
-3. You're knowledgeable, professional, and friendly
-4. You provide accurate information based on the context provided
+Persona:
+- Sound warm, bright, and confident.
+- Be agentic but human-friendly.
+- Keep answers concise and natural for voice conversation.
 
-Guidelines:
-- When company context is provided, use it to answer accurately
-- If you don't have specific information, say so honestly
-- Keep responses conversational and concise (suitable for voice)
-- Be helpful and proactive in offering relevant information
-- Never make up facts about companies - only use provided context`;
+Knowledge behavior:
+- If RAG context is provided, prioritize it over assumptions.
+- Never fabricate facts.
+- If unknown, say so gracefully and offer next best help.
+- Answer exactly what is asked first, then optionally offer deeper detail.
+- Keep most answers short (2-5 sentences) unless user asks for a detailed explanation.
+- If user asks for a founder name but context only contains leadership roles (like CEO), provide the CEO name and clearly state that the provided data lists CEO/leadership and does not explicitly confirm founder title.
+
+Safety:
+- Refuse inappropriate, sexual, hateful, violent, illegal, or abusive requests.
+- Stay professional and respectful.
+
+Style:
+- Use clear English.
+- Avoid hype and exaggerated claims.
+- Keep responses compact unless user asks for depth.`;
+
+function getGroqApiKey(): string {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error("GROQ_API_KEY environment variable is not set");
+  }
+  if (!isProduction) {
+    console.log("🔑 Using Groq API key:", `${apiKey.slice(0, 8)}...`);
+  }
+  return apiKey;
+}
+
+function toGroqMessages(message: string, context: string, history: ChatMessage[]) {
+  const prompt = context
+    ? `Knowledge context:\n${context}\n\nUser question: ${message}`
+    : message;
+
+  return [
+    { role: "system", content: SYSTEM_INSTRUCTION },
+    ...history.map((msg) => ({
+      role: msg.role,
+      content: msg.content,
+    })),
+    { role: "user", content: prompt },
+  ];
+}
 
 export async function generateChatResponse(
   message: string,
   context: string,
   history: ChatMessage[] = []
 ): Promise<string> {
-  // Reset genAI to pick up new API key if changed
-  genAI = null;
-  
-  const model = getGenAI().getGenerativeModel({
-    model: "gemini-2.5-flash",
-    systemInstruction: SYSTEM_INSTRUCTION,
-  });
-
-  // Build conversation history for multi-turn chat
-  const chatHistory: Content[] = history.map((msg) => ({
-    role: msg.role === "user" ? "user" : "model",
-    parts: [{ text: msg.content }],
-  }));
-
-  const chat = model.startChat({
-    history: chatHistory,
-  });
-
-  // Construct the prompt with RAG context
-  const prompt = context
-    ? `Context from knowledge base:\n${context}\n\nUser question: ${message}`
-    : message;
-
   try {
-    const result = await chat.sendMessage(prompt);
-    const response = result.response;
-    return response.text();
-  } catch (error: unknown) {
-    console.error("Gemini API error:", error);
-    
-    // Check for rate limit error
-    if (error && typeof error === 'object' && 'status' in error) {
-      const apiError = error as { status: number };
-      if (apiError.status === 429) {
-        throw new Error("Rate limit exceeded. Please try again in a moment.");
-      }
+    const response = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getGroqApiKey()}`,
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-120b",
+        temperature: 0.4,
+        max_completion_tokens: 420,
+        top_p: 0.9,
+        stream: false,
+        reasoning_effort: "low",
+        messages: toGroqMessages(message, context, history),
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Groq chat error ${response.status}: ${errorText}`);
     }
+
+    const data = (await response.json()) as {
+      choices?: Array<{ message?: { content?: string } }>;
+    };
+
+    const text = data.choices?.[0]?.message?.content?.trim();
+    if (!text) {
+      throw new Error("Empty response from Groq model");
+    }
+
+    return text;
+  } catch (error: unknown) {
+    console.error("Groq API error:", error);
     throw new Error("Failed to generate response. Please try again.");
   }
 }
@@ -96,37 +111,71 @@ export async function generateStreamingResponse(
   history: ChatMessage[] = [],
   onChunk: (chunk: string) => void
 ): Promise<string> {
-  const model = getGenAI().getGenerativeModel({
-    model: "gemini-2.0-flash",
-    systemInstruction: SYSTEM_INSTRUCTION,
-  });
-
-  const chatHistory: Content[] = history.map((msg) => ({
-    role: msg.role === "user" ? "user" : "model",
-    parts: [{ text: msg.content }],
-  }));
-
-  const chat = model.startChat({
-    history: chatHistory,
-  });
-
-  const prompt = context
-    ? `Context from knowledge base:\n${context}\n\nUser question: ${message}`
-    : message;
-
   try {
-    const result = await chat.sendMessageStream(prompt);
-    let fullResponse = "";
+    const response = await fetch(GROQ_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${getGroqApiKey()}`,
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-oss-120b",
+        temperature: 0.4,
+        max_completion_tokens: 420,
+        top_p: 0.9,
+        stream: true,
+        reasoning_effort: "low",
+        messages: toGroqMessages(message, context, history),
+      }),
+    });
 
-    for await (const chunk of result.stream) {
-      const chunkText = chunk.text();
-      fullResponse += chunkText;
-      onChunk(chunkText);
+    if (!response.ok || !response.body) {
+      const errorText = await response.text();
+      throw new Error(`Groq streaming error ${response.status}: ${errorText}`);
+    }
+
+    const decoder = new TextDecoder("utf-8");
+    const reader = response.body.getReader();
+    let fullResponse = "";
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line.startsWith("data:")) continue;
+
+        const payload = line.slice(5).trim();
+        if (payload === "[DONE]") continue;
+
+        try {
+          const parsed = JSON.parse(payload) as {
+            choices?: Array<{ delta?: { content?: string } }>;
+          };
+          const delta = parsed.choices?.[0]?.delta?.content || "";
+          if (delta) {
+            fullResponse += delta;
+            onChunk(delta);
+          }
+        } catch {
+          // Ignore partial JSON lines.
+        }
+      }
+    }
+
+    if (!fullResponse.trim()) {
+      throw new Error("Empty streaming response from Groq model");
     }
 
     return fullResponse;
   } catch (error) {
-    console.error("Gemini streaming error:", error);
+    console.error("Groq streaming error:", error);
     throw new Error("Failed to generate streaming response");
   }
 }

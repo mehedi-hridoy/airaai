@@ -7,6 +7,7 @@ import cors from "cors";
 import { chatRouter } from "./routes/chat.js";
 import { companiesRouter } from "./routes/companies.js";
 import ttsRouter from "./routes/tts.js";
+import sttRouter from "./routes/stt.js";
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -14,7 +15,7 @@ const NODE_ENV = process.env.NODE_ENV || "development";
 const isProduction = NODE_ENV === "production";
 
 // Validate required environment variables
-const requiredEnvVars = ["GEMINI_API_KEY"];
+const requiredEnvVars = ["GROQ_API_KEY"];
 const missingEnvVars = requiredEnvVars.filter((v) => !process.env[v]);
 if (missingEnvVars.length > 0) {
   console.error(`❌ Missing required environment variables: ${missingEnvVars.join(", ")}`);
@@ -60,6 +61,7 @@ app.get("/health", (_, res) => {
 app.use("/api/chat", chatRouter);
 app.use("/api/companies", companiesRouter);
 app.use("/api/tts", ttsRouter);
+app.use("/api/stt", sttRouter);
 
 // 404 handler
 app.use((_req, res) => {
